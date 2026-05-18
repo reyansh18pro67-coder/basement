@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>The Descent: Trap Edition</title>
+    <style>
+        /* --- RESET & VIEWPORT CORE --- */
+        body, html {
+            margin: 0; padding: 0; overflow: hidden;
+            width: 100%; height: 100%; background-color: #010101;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            user-select: none; -webkit-user-select: none; touch-action: none;
+        }
+
+        #canvas-viewport {
+            width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1;
+        }
+
+        /* --- POST-PROCESSING CINEMATIC OVERLAYS --- */
+        #vignette {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5;
+            pointer-events: none;
+            background: radial-gradient(circle, transparent 15%, rgba(0,0,0,0.9) 65%, rgba(0,0,0,1) 100%);
+        }
+
+        #crt-scanlines {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 6;
+            pointer-events: none;
+            background: linear-gradient(rgba(15, 12, 12, 0) 50%, rgba(0, 0, 0, 0.45) 50%);
+            background-size: 100% 4px;
+        }
+
+        #film-grain {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 7;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.99' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            opacity: 0.13;
+        }
+
+        #glitch-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 8;
+            pointer-events: none; background: rgba(255, 0, 0, 0); mix-blend-mode: overlay;
+            transition: background 0.05s ease;
+        }
+
+        /* --- GLASSMORPHISM HUD --- */
+        #hud-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10;
+            pointer-events: none; box-sizing: border-box; padding: 40px;
+            display: flex; flex-direction: column; justify-content: space-between;
+        }
+
+        .glass-panel {
+            background: rgba(6, 6, 6, 0.65);
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            padding: 22px 28px; border-radius: 4px; width: fit-content;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.8);
+        }
+
+        .hud-label {
+            color: #8c8275; font-size: 11px; letter-spacing: 4px;
+            font-weight: 700; text-transform: uppercase; margin-bottom: 6px;
+            display: flex; justify-content: space-between; width: 220px;
+        }
+        .hud-label span { color: #ffffff; font-family: monospace; }
+
+        .bar-track {
+            width: 220px; height: 2px; background: rgba(255, 255, 255, 0.05);
+            border-radius: 1px; overflow: hidden; margin-bottom: 14px;
+        }
+        .bar-track:last-child { margin-bottom: 0; }
+
+        .bar-fill {
+            height: 100%; width: 100%; transform-origin: left;
+            transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #health-fill { background: #991b1b; }
+        #battery-fill { background: #d4af37; }
+
+        #objective-panel {
+            margin-top: 15px; color: #b91c1c; font-size: 11px; letter-spacing: 3px;
+            font-weight: bold; text-transform: uppercase;
+        }
+        
+        #win-counter-panel {
+            margin-top: 8px; color: #0ea5e9; font-size: 11px; letter-spacing: 3px;
+            font-weight: bold; text-transform: uppercase;
+        }
+
+        .location-hud {
+            align-self: flex-end; color: #ffffff; font-size: 11px;
+            letter-spacing: 5px; font-weight: 600; text-transform: uppercase;
+            text-shadow: 0 4px 12px rgba(0,0,0,0.9); opacity: 0.5;
+        }
+
+        /* --- RETICLE & INTERACTION PROMPT --- */
+        #crosshair-container {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 15; pointer-events: none; display: flex; flex-direction: column; align-items: center;
+        }
+        #crosshair { width: 4px; height: 4px; background: rgba(255, 255, 255, 0.4); border-radius: 50%; }
+        #action-prompt {
+            margin-top: 15px; color: #ffffff; font-size: 10px; letter-spacing: 3px;
+            text-transform: uppercase; font-weight: 600; background: rgba(0,0,0,0.8);
+            padding: 6px 12px; border-radius: 2px; border: 1px solid rgba(255,255,255,0.1);
+            display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        /* --- RUNTIME ENGINE BLOCKER SYSTEM & ANIMATED BUTTON --- */
+        #engine-blocker {
+            position: absolute; width: 100%; height: 100%; background-color: #010101;
+            z-index: 100; display: flex; justify-content: center; align-items: center;
+        }
+
+        #menu-ui { text-align: center; }
+        #menu-ui h1 { font-size: 38px; letter-spacing: 20px; color: #991b1b; margin-bottom: 24px; font-weight: 300; }
+        
+        .start-btn {
+            background: transparent;
+            border: 1px solid rgba(153, 27, 27, 0.4);
+            color: #ffffff;
+            padding: 16px 40px;
+            font-size: 12px;
+            letter-spacing: 6px;
+            text-transform: uppercase;
+            font-weight: 400;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            box-shadow: 0 0 0 rgba(153, 27, 27, 0);
+            animation: pulseGlow 2.5s infinite ease-in-out;
+        }
+
+        .start-btn:hover {
+            color: #ffffff;
+            background: #991b1b;
+            border-color: #ff3333;
+            box-shadow: 0 0 30px rgba(153, 27, 27, 0.6);
+            letter-spacing: 9px;
+        }
+
+        @keyframes pulseGlow {
+            0% { box-shadow: 0 0 0 0 rgba(153, 27, 27, 0.3); border-color: rgba(153, 27, 27, 0.4); }
+            50% { box-shadow: 0 0 15px 2px rgba(153, 27, 27, 0.1); border-color: rgba(255, 51, 51, 0.6); }
+            100% { box-shadow: 0 0 0 0 rgba(153, 27, 27, 0.3); border-color: rgba(153, 27, 27, 0.4); }
+        }
+
+        /* --- ENDGAME CINEMATIC SCREEN --- */
+        #end-screen {
+            position: absolute; width: 100%; height: 100%; background-color: #000;
+            z-index: 110; display: none; flex-direction: column; justify-content: center; align-items: center;
+            text-align: center;
+        }
+        #end-screen h2 { font-size: 40px; letter-spacing: 20px; color: #ffffff; font-weight: 300; margin-bottom: 20px; }
+        #end-screen p { font-size: 12px; letter-spacing: 6px; color: #888; text-transform: uppercase; margin-bottom: 24px; }
+        
+        .restart-btn {
+            background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white;
+            padding: 12px 24px; font-size: 10px; letter-spacing: 4px; text-transform: uppercase;
+            cursor: pointer; transition: all 0.3s ease; pointer-events: auto;
+        }
+        .restart-btn:hover { background: white; color: black; }
+    </style>
+    <!-- Three.js Production Framework -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="engine-blocker">
+        <div id="menu-ui">
+            <h1>THE DESCENT</h1>
+            <button class="start-btn" id="launch-game-trigger">Descend</button>
+        </div>
+    </div>
+
+    <div id="end-screen">
+        <h2 id="end-title">BANISHED</h2>
+        <p id="end-desc">THE RITUAL IS COMPLETE. THE BASEMENT IS SILENT.</p>
+        <button class="restart-btn" onclick="window.location.reload()">Descend Again</button>
+    </div>
+
+    <div id="vignette"></div>
+    <div id="crt-scanlines"></div>
+    <div id="film-grain"></div>
+    <div id="glitch-screen"></div>
+
+    <div id="crosshair-container">
+        <div id="crosshair"></div>
+        <div id="action-prompt">PRESS [E] TO CLEANSE RITUAL SEAL</div>
+    </div>
+
+    <div id="hud-container">
+        <div class="glass-panel">
+            <div class="hud-label">SANITY <span id="hp-val">100%</span></div>
+            <div class="bar-track"><div id="health-fill" class="bar-fill"></div></div>
+            
+            <div class="hud-label">FLASHLIGHT POWER <span id="bat-val">100%</span></div>
+            <div class="bar-track"><div id="battery-fill" class="bar-fill"></div></div>
+
+            <div id="objective-panel">SEALS CLEANSED: <span id="seals-count">0 / 3</span></div>
+            <div id="win-counter-panel">WINS: <span id="win-count">0</span></div>
+        </div>
+        <div class="location-hud">BASEMENT LEVEL DESCENT // REYVERMA ENGINE</div>
+    </div>
+
+    <div id="canvas-viewport"></div>
+
+    <script>
+        // --- CONFIGURATION MATRIX ---
+        const CONFIG = {
+            Physics: { eyeHeight: 1.65, speed: 12.0, friction: 7.5, lookSensitivity: 0.002, radius: 0.45 },
+            Light: { color: 0xfff6e0, intensity: 6.0, distance: 22, angle: Math.PI / 6.5, penumbra: 0.65 },
+            AI: { spawnBehindChance: 0.003, checkInterval: 3000, minDistance: 2.5, attackSpeed: 4.5, runnerSpeed: 7.8 }
+        };
+
+        // --- CORE OPERATING SYSTEMS ---
+        let scene, camera, renderer, audioCtx;
+        let flashlight, ambientLight;
+        let lastTime = performance.now();
+        
+        // --- GAME SYSTEM STATES ---
+        let isEngineLocked = false, gameFinished = false;
+        let moveControls = { KeyW: false, KeyA: false, KeyS: false, KeyD: false, KeyE: false };
+        let player = { position: new THREE.Vector3(0, 5.65, 4), velocity: new THREE.Vector3(), battery: 100, sanity: 100, stepCounter: 0, sealsCleanised: 0, targetSeals: 3, wins: 0 };
+        
+        // --- STAIR TRAP TRACKING MATRIX ---
+        let stairTrap = { triggered: false, timer: 0, duration: 2.8 };
+
+        // --- ADVANCED BEHIND-STALKER AI PARAMETERS ---
+        let ghost = { 
+            group: null, material: null, floatTimer: 0, 
+            state: "IDLE", 
+            stalkTimer: 0, spawnCooldown: 0 
+        };
+
+        // --- FINAL STAGE SPRINTING CHASER GHOST ---
+        let runnerGhost = {
+            group: null, material: null, floatTimer: 0,
+            spawnZ: -46, isActive: false
+        };
+
+        // --- PARTY POPPER CELEBRATION SYSTEM ---
+        let confettiSystem = null;
+        let isCelebrating = false;
+        
+        // --- PROCEDURAL AUDIO SYNTH DESIGN SYSTEM ---
+        let audioNodes = { masterVolume: null, oscillatorHum: null };
+        let nextFootstepTime = 0;
+        let lastAICheck = 0;
+
+        // --- INTERACTION MAP PIPELINES ---
+        let interactableObjectsArray = [];
+        let raycaster = new THREE.Raycaster();
+
+        // Load persistent wins
+        if (localStorage.getItem('reyverma_horror_wins')) {
+            player.wins = parseInt(localStorage.getItem('reyverma_horror_wins'));
+            document.getElementById('win-count').innerText = player.wins;
+        }
+
+        init();
+        animate();
+
+        function init() {
+            const container = document.getElementById('canvas-viewport');
+
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x010101, 0.18);
+
+            camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 60);
+            camera.position.copy(player.position);
+
+            // --- PRODUCTION GRAPHICS PIPELINE ENGINE ---
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 0.9;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // --- DYNAMIC LIGHTING PIPELINE ---
+            ambientLight = new THREE.AmbientLight(0x010101);
+            scene.add(ambientLight);
+
+            flashlight = new THREE.SpotLight(CONFIG.Light.color, CONFIG.Light.intensity, CONFIG.Light.distance, CONFIG.Light.angle, CONFIG.Light.penumbra, 1.2);
+            flashlight.castShadow = true;
+            flashlight.shadow.mapSize.width = 2048;
+            flashlight.shadow.mapSize.height = 2048;
+            flashlight.shadow.bias = -0.0005;
+
+            const flashlightTarget = new THREE.Object3D();
+            flashlightTarget.position.set(0, 0, -1);
+            camera.add(flashlightTarget);
+            flashlight.target = flashlightTarget;
+            camera.add(flashlight);
+            scene.add(camera);
+
+            // --- BUILDING THE BASEMENT ENVIRONMENT ---
+            buildBasementArchitecture();
+
+            // --- ENTITY MANIFESTATION ---
+            buildGhostEntity();
+            buildRunnerGhostEntity();
+
+            // --- HARDWARE CONNECTORS INTERACTION ---
+            setupControlsPipeline();
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        // --- ENVIRONMENT ENGINE ---
+        function buildBasementArchitecture() {
+            const res = 1024;
+            const wallColor = buildGritTex('#151311', '#040303', res, false);
+            const wallBump = buildGritTex('#8080ff', '#5555ff', res, true);
+            const floorColor = buildGritTex('#181512', '#020101', res, false);
+
+            const wallMat = new THREE.MeshStandardMaterial({ map: wallColor, normalMap: wallBump, normalScale: new THREE.Vector2(2.2, 2.2), roughness: 0.96 });
+            const floorMat = new THREE.MeshStandardMaterial({ map: floorColor, roughness: 0.9 });
+            const stepMat = new THREE.MeshStandardMaterial({ color: 0x110f0e, roughness: 1.0 });
+
+            // 1. STAIRCASE DESCENT SEQUENCE GENERATION
+            let totalSteps = 16;
+            let stepW = 3.6, stepH = 0.25, stepD = 0.4;
+            let staircaseGroup = new THREE.Group();
+
+            for (let i = 0; i < totalSteps; i++) {
+                let stepGeo = new THREE.BoxGeometry(stepW, stepH, stepD);
+                let stepMesh = new THREE.Mesh(stepGeo, stepMat);
+                stepMesh.position.set(0, 4.0 - (i * stepH) - (stepH / 2), -i * stepD - (stepD / 2));
+                stepMesh.receiveShadow = true; stepMesh.castShadow = true;
+                staircaseGroup.add(stepMesh);
+            }
+            scene.add(staircaseGroup);
+
+            let tunnelWallGeo = new THREE.PlaneGeometry(12, 8);
+            let leftTunnelWall = new THREE.Mesh(tunnelWallGeo, wallMat);
+            leftTunnelWall.position.set(-stepW/2, 2, -2.5); leftTunnelWall.rotation.y = Math.PI / 2;
+            leftTunnelWall.receiveShadow = true;
+            let rightTunnelWall = leftTunnelWall.clone();
+            rightTunnelWall.position.x = stepW/2; rightTunnelWall.rotation.y = -Math.PI / 2;
+            scene.add(leftTunnelWall, rightTunnelWall);
+
+            // 2. LOWER BASEMENT RITUAL HALL CHAMBERS
+            let segmentLength = 6;
+            let startZ = -totalSteps * stepD; 
+            let totalBasementChunks = 8;
+
+            for (let i = 0; i < totalBasementChunks; i++) {
+                let currentChunkZ = startZ - (i * segmentLength);
+                let chunk = new THREE.Group();
+
+                let horizGeo = new THREE.PlaneGeometry(stepW, segmentLength);
+                let floor = new THREE.Mesh(horizGeo, floorMat);
+                floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -segmentLength / 2);
+                floor.receiveShadow = true;
+                chunk.add(floor);
+
+                let ceiling = new THREE.Mesh(horizGeo, wallMat);
+                ceiling.rotation.x = Math.PI / 2; ceiling.position.set(0, 3.2, -segmentLength / 2);
+                chunk.add(ceiling);
+
+                let vertGeo = new THREE.PlaneGeometry(segmentLength, 3.2);
+                let leftWall = new THREE.Mesh(vertGeo, wallMat);
+                leftWall.position.set(-stepW / 2, 3.2 / 2, -segmentLength / 2); leftWall.rotation.y = Math.PI / 2;
+                leftWall.receiveShadow = true; leftWall.castShadow = true;
+                chunk.add(leftWall);
+
+                let rightWall = new THREE.Mesh(vertGeo, wallMat);
+                rightWall.position.set(stepW / 2, 3.2 / 2, -segmentLength / 2); rightWall.rotation.y = -Math.PI / 2;
+                rightWall.receiveShadow = true; rightWall.castShadow = true;
+                chunk.add(rightWall);
+
+                const pillarGeo = new THREE.BoxGeometry(0.25, 3.2, 0.25);
+                const pillarMat = new THREE.MeshStandardMaterial({ color: 0x0a0908, roughness: 1.0 });
+                let pL = new THREE.Mesh(pillarGeo, pillarMat); pL.position.set(-stepW/2 + 0.125, 1.6, -segmentLength);
+                let pR = pL.clone(); pR.position.x = stepW/2 - 0.125;
+                pL.castShadow = true; pR.castShadow = true;
+                chunk.add(pL, pR);
+
+                chunk.position.set(0, 0, currentChunkZ);
+                scene.add(chunk);
+            }
+
+            // 3. GENERATE THE RITUAL SEALS
+            spawnRitualSeal(0, 0.01, startZ - 8);
+            spawnRitualSeal(-1.0, 0.01, startZ - 24);
+            spawnRitualSeal(1.0, 0.01, startZ - 40);
+        }
+
+        function spawnRitualSeal(x, y, z) {
+            let sealGroup = new THREE.Group();
+            let sealDisk = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.5, 0.5, 0.02, 16),
+                new THREE.MeshStandardMaterial({ color: 0x220505, roughness: 1.0 })
+            );
+            sealDisk.receiveShadow = true;
+            sealGroup.add(sealDisk);
+
+            let sealGlowMesh = new THREE.Mesh(
+                new THREE.RingGeometry(0.35, 0.42, 16),
+                new THREE.MeshBasicMaterial({ color: 0xb91c1c, side: THREE.DoubleSide })
+            );
+            sealGlowMesh.rotation.x = Math.PI / 2;
+            sealGlowMesh.position.y = 0.012;
+            sealGroup.add(sealGlowMesh);
+
+            let occultLight = new THREE.PointLight(0xb91c1c, 0.8, 3.5);
+            occultLight.position.y = 0.4;
+            sealGroup.add(occultLight);
+
+            sealGroup.position.set(x, y, z);
+            sealGroup.userData = { isRitualSeal: true, cleansed: false, coreGlow: sealGlowMesh, light: occultLight };
+            
+            scene.add(sealGroup);
+            interactableObjectsArray.push(sealGroup);
+        }
+
+        // --- SPECTRAL PHANTOM HORROR COMPILER ---
+        function buildGhostEntity() {
+            ghost.group = new THREE.Group();
+            ghost.material = new THREE.MeshBasicMaterial({
+                color: 0xff3333, transparent: true, opacity: 0.0, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+            });
+
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.25, 1.4, 12, 4, true), ghost.material);
+            body.position.y = 0.7;
+            ghost.group.add(body);
+
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 16), ghost.material);
+            head.position.y = 1.4;
+            ghost.group.add(head);
+
+            ghost.group.position.set(0, -10, 0); 
+            scene.add(ghost.group);
+        }
+
+        // --- ACTIVE RUNNING CHASER GHOST ENGINE ---
+        function buildRunnerGhostEntity() {
+            runnerGhost.group = new THREE.Group();
+            runnerGhost.material = new THREE.MeshBasicMaterial({
+                color: 0xcc0000, transparent: true, opacity: 0.0, side: THREE.DoubleSide
+            });
+
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.3, 1.5, 8, 4, true), runnerGhost.material);
+            body.position.y = 0.75;
+            runnerGhost.group.add(body);
+
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 0.25), runnerGhost.material);
+            head.position.y = 1.45;
+            runnerGhost.group.add(head);
+
+            runnerGhost.group.position.set(0, 0.1, runnerGhost.spawnZ);
+            scene.add(runnerGhost.group);
+        }
+
+        // --- PARTY POPPER CONFETTI GENERATOR ---
+        function createPartyPopperEngine() {
+            isCelebrating = true;
+            const count = 180;
+            const geo = new THREE.BufferGeometry();
+            const positions = [];
+            const velocities = [];
+            const colors = [];
+
+            const colorPalette = [0xff0055, 0x00ff55, 0x0055ff, 0xffff00, 0xff00ff, 0x00ffff];
+
+            for(let i=0; i<count; i++) {
+                positions.push(camera.position.x, camera.position.y - 0.5, camera.position.z - 1);
+                
+                velocities.push(
+                    (Math.random() - 0.5) * 6,
+                    Math.random() * 5 + 4,
+                    (Math.random() - 0.5) * 6
+                );
+
+                const c = new THREE.Color(colorPalette[Math.floor(Math.random() * colorPalette.length)]);
+                colors.push(c.r, c.g, c.b);
+            }
+
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const mat = new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, opacity: 1.0 });
+            confettiSystem = new THREE.Points(geo, mat);
+            confettiSystem.userData = { velocities: velocities, age: 0 };
+            scene.add(confettiSystem);
+        }
+
+        // --- TEXTURE MAPPER ---
+        function buildGritTex(baseHex, dirtHex, res, isNormalMap) {
+            const canvas = document.createElement('canvas');
+            canvas.width = res; canvas.height = res;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = baseHex; ctx.fillRect(0, 0, res, res);
+
+            if (isNormalMap) {
+                for (let y = 0; y < res; y += 2) {
+                    let noise = Math.floor(Math.random() * 40);
+                    ctx.fillStyle = `rgb(${128 + noise}, 128, 255)`;
+                    ctx.fillRect(0, y, res, 1);
+                }
+            } else {
+                ctx.globalAlpha = 0.18;
+                for (let i = 0; i < res * res * 0.15; i++) {
+                    ctx.fillStyle = dirtHex;
+                    ctx.fillRect(Math.random() * res, Math.random() * res, 1, 1);
+                }
+            }
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
+            return texture;
+        }
+
+        // --- AUDIO SYNTH INFRASTRUCTURE ---
+        function initAudioEngineSystem() {
+            if (audioCtx) return; 
+            
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            audioNodes.masterVolume = audioCtx.createGain();
+            audioNodes.masterVolume.gain.setValueAtTime(0.35, audioCtx.currentTime);
+            audioNodes.masterVolume.connect(audioCtx.destination);
+
+            audioNodes.oscillatorHum = audioCtx.createOscillator();
+            let ambientFilter = audioCtx.createBiquadFilter();
+            let ambientVolume = audioCtx.createGain();
+
+            audioNodes.oscillatorHum.type = 'sawtooth';
+            audioNodes.oscillatorHum.frequency.setValueAtTime(30, audioCtx.currentTime); 
+
+            ambientFilter.type = 'lowpass';
+            ambientFilter.frequency.setValueAtTime(100, audioCtx.currentTime);
+            ambientVolume.gain.setValueAtTime(0.5, audioCtx.currentTime);
+
+            audioNodes.oscillatorHum.connect(ambientFilter);
+            ambientFilter.connect(ambientVolume);
+            ambientVolume.connect(audioNodes.masterVolume);
+            audioNodes.oscillatorHum.start();
+        }
+
+        function playSynthesizedFootstepAudio() {
+            if (!audioCtx) return;
+            let noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.12, audioCtx.sampleRate);
+            let bufferData = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < noiseBuffer.length; i++) bufferData[i] = Math.random() * 2 - 1;
+
+            let noiseNode = audioCtx.createBufferSource();
+            noiseNode.buffer = noiseBuffer;
+            let filterNode = audioCtx.createBiquadFilter();
+            filterNode.type = 'lowpass';
+            filterNode.frequency.setValueAtTime(240, audioCtx.currentTime); 
+
+            let volumeGate = audioCtx.createGain();
+            volumeGate.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            volumeGate.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+
+            noiseNode.connect(filterNode);
+            filterNode.connect(volumeGate);
+            volumeGate.connect(audioNodes.masterVolume);
+            noiseNode.start();
+        }
+
+        function playBehindSpawnStaticAudio() {
+            if (!audioCtx) return;
+            let bufferSize = audioCtx.sampleRate * 0.4;
+            let buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            let data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+            let noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+
+            let biquad = audioCtx.createBiquadFilter();
+            biquad.type = 'peaking';
+            biquad.frequency.setValueAtTime(800, audioCtx.currentTime);
+
+            let gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+
+            noise.connect(biquad);
+            biquad.connect(gain);
+            gain.connect(audioNodes.masterVolume);
+            noise.start();
+        }
+
+        function playGhostJumpscareAudio() {
+            if (!audioCtx) return;
+            let osc = audioCtx.createOscillator();
+            let gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(50, audioCtx.currentTime + 0.8);
+
+            gain.gain.setValueAtTime(0.6, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
+
+            osc.connect(gain);
+            gain.connect(audioNodes.masterVolume);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.8);
+        }
+
+        function playCleansingRitualAudioPattern() {
+            if (!audioCtx) return;
+            let bellOsc = audioCtx.createOscillator();
+            let bellGain = audioCtx.createGain();
+            bellOsc.type = 'sine';
+            bellOsc.frequency.setValueAtTime(588, audioCtx.currentTime); 
+            bellGain.gain.setValueAtTime(0.35, audioCtx.currentTime);
+            bellGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.5);
+            bellOsc.connect(bellGain);
+            bellGain.connect(audioNodes.masterVolume);
+            bellOsc.start();
+            bellOsc.stop(audioCtx.currentTime + 1.5);
+        }
+
+        // --- HARDWARE INTERFACES CORE (WITH MOBILE LOOK CONTROLS) ---
+        function setupControlsPipeline() {
+            const blocker = document.getElementById('engine-blocker');
+            const startBtn = document.getElementById('launch-game-trigger');
+            
+            startBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); 
+                document.body.requestPointerLock();
+                initAudioEngineSystem();
+
+                // Mobile compatibility baseline configuration
+                if (!document.pointerLockElement) {
+                    blocker.style.display = 'none';
+                    isEngineLocked = true;
+                }
+            });
+
+            document.addEventListener('pointerlockchange', () => {
+                if (document.pointerLockElement === document.body) {
+                    blocker.style.display = 'none';
+                    isEngineLocked = true;
+                } else {
+                    if (!gameFinished) blocker.style.display = 'flex';
+                    isEngineLocked = false;
+                }
+            });
+
+            // Desktop look handler
+            document.addEventListener('mousemove', (e) => {
+                if (!isEngineLocked || gameFinished || !document.pointerLockElement) return;
+                applyLookRotation(e.movementX, e.movementY);
+            });
+
+            // Mobile uniform touch look drag handler
+            let touchStartX = 0, touchStartY = 0;
+            window.addEventListener('touchstart', (e) => {
+                if (!isEngineLocked || gameFinished) return;
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            });
+
+            window.addEventListener('touchmove', (e) => {
+                if (!isEngineLocked || gameFinished) return;
+                let deltaX = e.touches[0].clientX - touchStartX;
+                let deltaY = e.touches[0].clientY - touchStartY;
+                
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+
+                // Scale touch factor slightly for precision dragging mechanics
+                applyLookRotation(deltaX * 6.5, deltaY * 6.5);
+            });
+
+            window.addEventListener('keydown', (e) => { if (e.code in moveControls) moveControls[e.code] = true; });
+            window.addEventListener('keyup', (e) => { if (e.code in moveControls) moveControls[e.code] = false; });
+        }
+
+        function applyLookRotation(movementX, movementY) {
+            const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+            euler.setFromQuaternion(camera.quaternion);
+            euler.y -= movementX * CONFIG.Physics.lookSensitivity;
+            euler.x -= movementY * CONFIG.Physics.lookSensitivity;
+            euler.x = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, euler.x));
+            camera.quaternion.setFromEuler(euler);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- INTERACTION RAYCAST ---
+        function runInteractionRaycastingPipeline() {
+            raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+            let intersects = raycaster.intersectObjects(interactableObjectsArray, true);
+            let activePrompt = document.getElementById('action-prompt');
+
+            if (intersects.length > 0) {
+                let targetedObject = intersects[0].object;
+                while (targetedObject.parent && !targetedObject.userData.isRitualSeal) {
+                    targetedObject = targetedObject.parent;
+                }
+
+                if (targetedObject.userData.isRitualSeal && !targetedObject.userData.cleansed) {
+                    activePrompt.style.display = 'block';
+                    if (moveControls.KeyE) {
+                        targetedObject.userData.cleansed = true;
+                        targetedObject.userData.coreGlow.material.color.setHex(0x0ea5e9); 
+                        targetedObject.userData.light.color.setHex(0x0ea5e9);
+                        player.sealsCleanised++;
+                        document.getElementById('seals-count').innerText = `${player.sealsCleanised} / ${player.targetSeals}`;
+                        playCleansingRitualAudioPattern();
+                        moveControls.KeyE = false;
+
+                        if (player.sealsCleanised >= player.targetSeals) {
+                            document.getElementById('objective-panel').innerText = "ESCAPE NOW! RUN TO THE STAIRS!";
+                            document.getElementById('objective-panel').style.color = "#0ea5e9";
+                            
+                            runnerGhost.isActive = true; 
+                            runnerGhost.material.opacity = 1.0; 
+                            playBehindSpawnStaticAudio();
+                        }
+                    }
+                }
+            } else {
+                activePrompt.style.display = 'none';
+            }
+        }
+
+        function triggerEndgameSequence(victory) {
+            gameFinished = true;
+            isEngineLocked = false;
+            if (document.pointerLockElement) document.exitPointerLock();
+            
+            const screen = document.getElementById('end-screen');
+            const title = document.getElementById('end-title');
+            const desc = document.getElementById('end-desc');
+
+            if(victory) {
+                player.wins += 1;
+                localStorage.setItem('reyverma_horror_wins', player.wins);
+                document.getElementById('win-count').innerText = player.wins;
+
+                title.innerText = "ESCAPED";
+                title.style.color = "#0ea5e9";
+                desc.innerText = "YOU OUTSPRINTED THE NIGHTMARE. THE DESCENT HAS ENDED.";
+                createPartyPopperEngine();
+            } else {
+                title.innerText = "CONSUMED";
+                title.style.color = "#991b1b";
+                desc.innerText = "IT CAUGHT UP TO YOU IN THE DARKNESS.";
+            }
+            screen.style.display = 'flex';
+            if(audioNodes.oscillatorHum) audioNodes.oscillatorHum.stop();
+        }
+
+        // --- AUTOMATED STALKER REAR AI SUBSYSTEMS ---
+        function runStalkerAIPipeline(currentTime, delta) {
+            if (camera.position.z > -2.4 || runnerGhost.isActive) return; 
+
+            if (ghost.spawnCooldown > 0) {
+                ghost.spawnCooldown -= delta * 1000;
+                return;
+            }
+
+            if (ghost.state === "IDLE") {
+                if (currentTime - lastAICheck > CONFIG.AI.checkInterval) {
+                    lastAICheck = currentTime;
+
+                    if (Math.random() < CONFIG.AI.spawnBehindChance * (1.2 - player.sanity / 100)) {
+                        manifestGhostDirectlyBehindPlayer();
+                    }
+                }
+            }
+        }
+
+        function manifestGhostDirectlyBehindPlayer() {
+            let targetDirection = new THREE.Vector3();
+            camera.getWorldDirection(targetDirection);
+            targetDirection.y = 0; 
+            targetDirection.normalize();
+
+            let spawnPosition = camera.position.clone().addScaledVector(targetDirection, -CONFIG.AI.minDistance);
+            spawnPosition.y = 0.1;
+
+            if (Math.abs(spawnPosition.x) < 1.6) {
+                ghost.group.position.copy(spawnPosition);
+                ghost.state = "STALKING";
+                ghost.stalkTimer = 0;
+                ghost.material.color.setHex(0xff1111); 
+                playBehindSpawnStaticAudio();
+            }
+        }
+
+        // --- MASTER FRAME ENGINE EXECUTION ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now();
+            const delta = Math.min((time - lastTime) / 1000, 0.1);
+
+            if (isEngineLocked && !gameFinished) {
+
+                runInteractionRaycastingPipeline();
+                runStalkerAIPipeline(time, delta);
+
+                // --- 1. ENTRY STAIR TRAP ENGINE ---
+                if (camera.position.z <= 3.8 && camera.position.z >= -2.4 && !stairTrap.triggered && player.sealsCleanised === 0) {
+                    stairTrap.triggered = true;
+                    playBehindSpawnStaticAudio();
+                    
+                    ghost.group.position.set(0, 2.0, -1.2);
+                    ghost.state = "STALKING";
+                    ghost.stalkTimer = 1.5; 
+                    ghost.material.opacity = 0.8;
+                    ghost.material.color.setHex(0xff0000);
+                }
+
+                if (stairTrap.triggered && stairTrap.timer < stairTrap.duration) {
+                    stairTrap.timer += delta;
+                    moveControls.KeyW = false;
+                    moveControls.KeyS = false;
+                    player.velocity.set(0,0,0);
+                    
+                    document.getElementById('glitch-screen').style.background = `rgba(153, 27, 27, ${0.15 + Math.random() * 0.25})`;
+
+                    if (stairTrap.timer >= stairTrap.duration) {
+                        ghost.state = "IDLE";
+                        ghost.material.opacity = 0;
+                        ghost.spawnCooldown = 5000;
+                        document.getElementById('glitch-screen').style.background = 'rgba(0,0,0,0)';
+                    }
+                }
+
+                // --- 2. SPRINTING CHASER GHOST PROCESSING ---
+                if (runnerGhost.group && runnerGhost.isActive) {
+                    runnerGhost.floatTimer += delta * 15.0; 
+                    runnerGhost.group.position.y = 0.1 + Math.abs(Math.sin(runnerGhost.floatTimer)) * 0.4; 
+
+                    let chaseDir = camera.position.clone().sub(runnerGhost.group.position);
+                    chaseDir.y = 0;
+                    chaseDir.normalize();
+                    
+                    runnerGhost.group.position.addScaledVector(chaseDir, CONFIG.AI.runnerSpeed * delta);
+                    runnerGhost.group.lookAt(new THREE.Vector3(camera.position.x, runnerGhost.group.position.y, camera.position.z));
+
+                    let currentDist = camera.position.distanceTo(runnerGhost.group.position);
+                    if (currentDist < 12.0) {
+                        let dynamicGlitchIntensity = (12.0 - currentDist) / 12.0 * 0.5;
+                        document.getElementById('glitch-screen').style.background = `rgba(200, 0, 0, ${dynamicGlitchIntensity + Math.random() * 0.15})`;
+                    }
+
+                    if (currentDist < 0.9) {
+                        playGhostJumpscareAudio();
+                        triggerEndgameSequence(false);
+                    }
+                }
+
+                // --- 3. STALKER REAR ENTITY TICK BEHAVIORS ---
+                if (ghost.group && ghost.state !== "IDLE" && !stairTrap.triggered && !runnerGhost.isActive) {
+                    ghost.floatTimer += delta;
+                    ghost.group.position.y = 0.12 + Math.sin(ghost.floatTimer * 5.0) * 0.05;
+                    ghost.group.lookAt(new THREE.Vector3(camera.position.x, ghost.group.position.y, camera.position.z));
+
+                    let dirToGhost = ghost.group.position.clone().sub(camera.position).normalize();
+                    let camDir = new THREE.Vector3();
+                    camera.getWorldDirection(camDir);
+                    let lookDotProduct = camDir.dot(dirToGhost); 
+
+                    if (ghost.state === "STALKING") {
+                        ghost.stalkTimer += delta;
+                        ghost.material.opacity = Math.min(0.75, ghost.stalkTimer * 0.4);
+
+                        document.getElementById('glitch-screen').style.background = `rgba(153, 27, 27, ${0.1 + Math.random() * 0.2})`;
+
+                        if (lookDotProduct > 0.65 && flashlight.intensity > 0.5) {
+                            ghost.state = "IDLE";
+                            ghost.material.opacity = 0;
+                            ghost.spawnCooldown = 6000 + Math.random() * 8000; 
+                            document.getElementById('glitch-screen').style.background = 'rgba(0,0,0,0)';
+                        }
+                        else if (ghost.stalkTimer > 3.8) {
+                            ghost.state = "ATTACKING";
+                            playGhostJumpscareAudio();
+                        }
+                    } 
+                    else if (ghost.state === "ATTACKING") {
+                        let speedDir = camera.position.clone().sub(ghost.group.position);
+                        speedDir.y = 0; speedDir.normalize();
+                        ghost.group.position.addScaledVector(speedDir, CONFIG.AI.attackSpeed * delta);
+                        
+                        ghost.material.opacity = 1.0;
+                        document.getElementById('glitch-screen').style.background = `rgba(180, 0, 0, ${0.4 + Math.random() * 0.3})`;
+
+                        if (camera.position.distanceTo(ghost.group.position) < 0.85) {
+                            triggerEndgameSequence(false);
+                        }
+                    }
+
+                    player.sanity = Math.max(0, player.sanity - delta * 4.5);
+                    let sanityFloor = Math.round(player.sanity);
+                    document.getElementById('hp-val').innerText = sanityFloor + "%";
+                    document.getElementById('health-fill').style.transform = `scaleX(${sanityFloor / 100})`;
+                } else if (!stairTrap.triggered && !runnerGhost.isActive) {
+                    document.getElementById('glitch-screen').style.background = 'rgba(0,0,0,0)';
+                }
+
+                // --- 4. PLAYER PHYSICAL KINETIC MATRIX ---
+                player.velocity.x -= player.velocity.x * CONFIG.Physics.friction * delta;
+                player.velocity.z -= player.velocity.z * CONFIG.Physics.friction * delta;
+
+                let moveZ = Number(moveControls.KeyW) - Number(moveControls.KeyS);
+                let moveX = Number(moveControls.KeyD) - Number(moveControls.KeyA);
+
+                const currentRotation = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(camera.quaternion);
+                
+                if (moveZ !== 0) {
+                    player.velocity.z -= moveZ * Math.cos(currentRotation.y) * CONFIG.Physics.speed * delta;
+                    player.velocity.x -= moveZ * Math.sin(currentRotation.y) * CONFIG.Physics.speed * delta;
+                }
+                if (moveX !== 0) {
+                    player.velocity.z += moveX * Math.sin(currentRotation.y) * CONFIG.Physics.speed * delta;
+                    player.velocity.x -= moveX * Math.cos(currentRotation.y) * CONFIG.Physics.speed * delta;
+                }
+
+                camera.position.x += player.velocity.x * delta;
+                camera.position.z += player.velocity.z * delta;
+
+                if (player.sealsCleanised >= player.targetSeals && camera.position.z >= 3.9) {
+                    triggerEndgameSequence(true);
+                }
+
+                // FIXED STAIRCASE ACCURATE STEP HEIGHT INTERPOLATION
+                if (camera.position.z <= 4.0 && camera.position.z >= -6.4) {
+                    let totalStairDistance = 10.4; 
+                    let normalizedProgress = (4.0 - camera.position.z) / totalStairDistance;
+                    normalizedProgress = Math.max(0, Math.min(1, normalizedProgress));
+                    
+                    let targetHeightY = CONFIG.Physics.eyeHeight + (4.0 - (normalizedProgress * 4.0));
+                    camera.position.y += (targetHeightY - camera.position.y) * 0.35; 
+                } else if (camera.position.z < -6.4) {
+                    camera.position.y += (CONFIG.Physics.eyeHeight - camera.position.y) * 0.35;
+                }
+
+                let speedMagnitude = Math.sqrt(player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z);
+                if (speedMagnitude > 0.15) {
+                    player.stepCounter += delta * 14.5;
+                    if (camera.position.z < -6.4) {
+                        camera.position.y += Math.sin(player.stepCounter) * 0.022;
+                    }
+
+                    if (time > nextFootstepTime) {
+                        playSynthesizedFootstepAudio();
+                        nextFootstepTime = time + 440; 
+                    }
+                }
+
+                const xBound = (3.6 / 2) - CONFIG.Physics.radius;
+                if (camera.position.x > xBound) camera.position.x = xBound;
+                if (camera.position.x < -xBound) camera.position.x = -xBound;
+                if (camera.position.z > 4.2) camera.position.z = 4.2;
+            }
+
+            // --- 5. FLASHLIGHT BATTERY POWER SYSTEMS ---
+            if (isEngineLocked && !gameFinished) {
+                if (player.battery > 0) {
+                    player.battery -= delta * 0.012;
+                    let displayBat = Math.max(0, Math.round(player.battery));
+                    document.getElementById('bat-val').innerText = displayBat + "%";
+                    document.getElementById('battery-fill').style.transform = `scaleX(${displayBat / 100})`;
+                    if (player.battery > 4) {
+                        flashlight.intensity = CONFIG.Light.intensity + Math.random() * 0.2;
+                    }
+                } else {
+                    flashlight.intensity = 0;
+                    document.getElementById('bat-val').innerText = "0%";
+                    document.getElementById('battery-fill').style.transform = 'scaleX(0)';
+                }
+            }
+
+            // --- 6. PARTY POPPER CELEBRATION RUNTIME TICK ---
+            if (isCelebrating && confettiSystem) {
+                const posArr = confettiSystem.geometry.attributes.position.array;
+                const vels = confettiSystem.userData.velocities;
+                confettiSystem.userData.age += delta;
+
+                for(let i=0; i<posArr.length/3; i++) {
+                    posArr[i*3] += vels[i*3] * delta;
+                    posArr[i*3+1] += vels[i*3+1] * delta;
+                    posArr[i*3+2] += vels[i*3+2] * delta;
+
+                    vels[i*3+1] -= 9.8 * delta; 
+                }
+                confettiSystem.geometry.attributes.position.needsUpdate = true;
+                confettiSystem.material.opacity = Math.max(0, 1.0 - confettiSystem.userData.age / 4.0);
+            }
+
+            lastTime = time;
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
